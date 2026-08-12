@@ -3,7 +3,6 @@ import { json, noContent, readJson } from './_shared/http.js';
 import { bindBlobs, creditCheckoutSession } from './_shared/walletStore.js';
 
 const MIN_CENTS = 100;
-const MAX_CENTS = 10000;
 const ALLOWED = new Set([500, 1000, 2500, 5000]);
 
 // One-click top-up: charge Stripe's test Visa (4242…) server-side so users
@@ -25,7 +24,7 @@ export async function handler(event) {
   const playerId = String(body.playerId || '').trim();
   const amountCents = Math.floor(Number(body.amountCents));
   if (!playerId) return json(400, { error: 'player_id_required' });
-  if (!Number.isFinite(amountCents) || amountCents < MIN_CENTS || amountCents > MAX_CENTS) {
+  if (!Number.isFinite(amountCents) || amountCents < MIN_CENTS) {
     return json(400, { error: 'invalid_amount' });
   }
   if (!ALLOWED.has(amountCents) && amountCents % 100 !== 0) {

@@ -4,6 +4,23 @@ import { dirname, join } from 'node:path';
 
 // Map playerId → Stripe Customer that already has test Visa 4242 on file,
 // so Checkout shows a saved card to confirm instead of an empty card form.
+// Sigma work emails (`*@sigmacomputing.com`) resolve via Stripe email lookup
+// so account formation matches the real CurrentUserEmail().
+
+/** @type {RegExp} */
+export const SIGMA_EMAIL_RE = /^[^\s@]+@sigmacomputing\.com$/i;
+
+export function isSigmaEmail(value) {
+  return SIGMA_EMAIL_RE.test(String(value || '').trim());
+}
+
+export function normalizePlayerEmail(playerId) {
+  const raw = String(playerId || '').trim();
+  if (!raw) return null;
+  if (isSigmaEmail(raw)) return raw.toLowerCase();
+  if (raw.includes('@')) return raw.toLowerCase();
+  return null;
+}
 
 function filePath() {
   return process.env.STRIPE_CUSTOMER_MAP_PATH || join(process.cwd(), '.stripe-customers.json');
@@ -61,8 +78,6 @@ async function setMappedCustomerId(playerId, customerId) {
   writeFileMap(all);
 }
 
-const DEMO_FIRST_NAMES = ['Alex', 'Jordan', 'Sam', 'Casey', 'Riley', 'Morgan', 'Quinn', 'Avery'];
-const DEMO_LAST_NAMES = ['Nguyen', 'Patel', 'Garcia', 'Kim', 'Brooks', 'Chen', 'Rivera', 'Walsh'];
 const DEMO_STREETS = ['123 Market St', '456 Oak Ave', '789 Pine Rd', '12 Cedar Blvd', '88 Harbor Way'];
 const DEMO_CITIES = [
   { city: 'San Francisco', state: 'CA', postal_code: '94105' },
@@ -76,20 +91,23 @@ function pick(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-/** Cosmetic Customer fields only — does not autofill Checkout card form fields. */
-function randomDemoBilling() {
-  const name = `${pick(DEMO_FIRST_NAMES)} ${pick(DEMO_LAST_NAMES)}`;
+// Cosmetic only: fills the Customer's billing address so demo records look
+// complete. Stripe will not let anyone prefill Checkout's card fields.
+function randomDemoAddress() {
   const place = pick(DEMO_CITIES);
   return {
-    name,
-    address: {
-      line1: pick(DEMO_STREETS),
-      city: place.city,
-      state: place.state,
-      postal_code: place.postal_code,
-      country: 'US',
-    },
+    line1: pick(DEMO_STREETS),
+    city: place.city,
+    state: place.state,
+    postal_code: place.postal_code,
+    country: 'US',
   };
+}
+
+async function findCustomerByEmail(stripe, email) {
+  if (!email) return null;
+  const listed = await stripe.customers.list({ email, limit: 5 });
+  return listed.data.find((c) => !c.deleted) || null;
 }
 
 async function ensureDefaultTestCard(stripe, customerId) {
@@ -106,7 +124,6 @@ async function ensureDefaultTestCard(stripe, customerId) {
     return visa4242.id;
   }
 
-  // Test-mode token for Visa 4242 4242 4242 4242
   const pm = await stripe.paymentMethods.create({
     type: 'card',
     card: { token: 'tok_visa' },
@@ -120,15 +137,25 @@ async function ensureDefaultTestCard(stripe, customerId) {
 
 /**
  * Every wallet user gets a Stripe Customer with the same demo Visa on file.
+ * `*@sigmacomputing.com` playerIds form/lookup the Stripe customer by that email.
  * Checkout then opens with that card ready to confirm (Link / saved-card UI).
  * You cannot autofill PAN/CVC into Stripe's iframe — Dashboard cannot either.
  */
-export async function ensureCustomerWithDefaultCard(stripe, playerId) {
+export async function ensureCustomerWithDefaultCard(stripe, playerId, { displayName } = {}) {
   if (!String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_')) {
     throw new Error('default_card_test_mode_only');
   }
 
-  let customerId = await getMappedCustomerId(playerId);
+  const rawId = String(playerId || '').trim();
+  if (!rawId) throw new Error('player_id_required');
+
+  const email = normalizePlayerEmail(rawId);
+  const sigma = isSigmaEmail(rawId);
+  // Blob map key: prefer canonical Sigma email so casing variants share one customer.
+  const mapKey = sigma ? email : rawId;
+  const name = String(displayName || rawId).trim() || rawId;
+
+  let customerId = await getMappedCustomerId(mapKey);
   let customer = null;
 
   if (customerId) {
@@ -140,19 +167,46 @@ export async function ensureCustomerWithDefaultCard(stripe, playerId) {
     }
   }
 
+  // Sigma emails: also resolve via Stripe email search (Account information).
+  if (!customer && email && sigma) {
+    customer = await findCustomerByEmail(stripe, email);
+    if (customer) {
+      customerId = customer.id;
+      await setMappedCustomerId(mapKey, customerId);
+    }
+  }
+
   if (!customer) {
-    const email = playerId.includes('@') ? playerId : undefined;
-    const billing = randomDemoBilling();
     customer = await stripe.customers.create({
-      email,
-      name: billing.name,
-      address: billing.address,
-      metadata: { playerId, demoCard: 'tok_visa' },
+      email: email || undefined,
+      name,
+      address: randomDemoAddress(),
+      metadata: {
+        playerId: mapKey,
+        demoCard: 'tok_visa',
+        ...(sigma ? { emailDomain: 'sigmacomputing.com' } : {}),
+      },
     });
     customerId = customer.id;
-    await setMappedCustomerId(playerId, customerId);
+    await setMappedCustomerId(mapKey, customerId);
+  } else {
+    // Keep Account information in sync for Sigma work emails.
+    const patch = {};
+    if (email && customer.email !== email) patch.email = email;
+    if (name && customer.name !== name) patch.name = name;
+    if (Object.keys(patch).length) {
+      customer = await stripe.customers.update(customerId, {
+        ...patch,
+        metadata: {
+          ...(customer.metadata || {}),
+          playerId: mapKey,
+          demoCard: 'tok_visa',
+          ...(sigma ? { emailDomain: 'sigmacomputing.com' } : {}),
+        },
+      });
+    }
   }
 
   const paymentMethodId = await ensureDefaultTestCard(stripe, customerId);
-  return { customerId, paymentMethodId };
+  return { customerId, paymentMethodId, email: email || null, sigma };
 }

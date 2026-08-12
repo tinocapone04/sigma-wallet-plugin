@@ -31,7 +31,7 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
-export function usePaidWallet(playerId) {
+export function usePaidWallet(playerId, { displayName } = {}) {
   const configured = isPaidWalletConfigured();
   const [balanceCents, setBalanceCents] = useState(0);
   const [ownedGameIds, setOwnedGameIds] = useState([]);
@@ -82,12 +82,16 @@ export function usePaidWallet(playerId) {
       if (!playerId) throw new Error('player_id_required');
       const data = await apiFetch('/api/checkout', {
         method: 'POST',
-        body: JSON.stringify({ playerId, amountCents }),
+        body: JSON.stringify({
+          playerId,
+          amountCents,
+          displayName: displayName || undefined,
+        }),
       });
       if (!data.clientSecret) throw new Error('missing_client_secret');
       return data;
     },
-    [playerId],
+    [playerId, displayName],
   );
 
   // Webhook-free crediting: after Stripe.js fires onComplete, ask the server

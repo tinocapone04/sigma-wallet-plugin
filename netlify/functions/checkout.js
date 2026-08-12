@@ -1,10 +1,13 @@
 import Stripe from 'stripe';
 import { json, noContent, readJson } from './_shared/http.js';
 import { bindBlobs } from './_shared/walletStore.js';
-import { ensureCustomerWithDefaultCard } from './_shared/stripeCustomer.js';
+import {
+  ensureCustomerWithDefaultCard,
+  isSigmaEmail,
+  normalizePlayerEmail,
+} from './_shared/stripeCustomer.js';
 
 const MIN_CENTS = 100;
-const MAX_CENTS = 10000;
 const ALLOWED = new Set([500, 1000, 2500, 5000]);
 
 // Embedded Checkout: returns a client_secret the wallet UI mounts in-page, so
@@ -22,10 +25,23 @@ export async function handler(event) {
   const body = readJson(event);
   if (!body) return json(400, { error: 'invalid_json' });
 
-  const playerId = String(body.playerId || '').trim();
+  const rawPlayerId = String(body.playerId || '').trim();
+  const displayName = String(body.displayName || '').trim() || undefined;
   const amountCents = Math.floor(Number(body.amountCents));
-  if (!playerId) return json(400, { error: 'player_id_required' });
-  if (!Number.isFinite(amountCents) || amountCents < MIN_CENTS || amountCents > MAX_CENTS) {
+  if (!rawPlayerId) return json(400, { error: 'player_id_required' });
+
+  if (process.env.REQUIRE_SIGMA_EMAIL === 'true' && !isSigmaEmail(rawPlayerId)) {
+    return json(400, {
+      error: 'sigma_email_required',
+      message: 'playerId must match *@sigmacomputing.com',
+    });
+  }
+
+  const playerId = isSigmaEmail(rawPlayerId)
+    ? normalizePlayerEmail(rawPlayerId)
+    : rawPlayerId;
+
+  if (!Number.isFinite(amountCents) || amountCents < MIN_CENTS) {
     return json(400, { error: 'invalid_amount' });
   }
   if (!ALLOWED.has(amountCents) && amountCents % 100 !== 0) {
@@ -35,8 +51,9 @@ export async function handler(event) {
   const stripe = new Stripe(secret);
 
   try {
-    // Attach demo Visa 4242 as the customer's default so Checkout shows it on file.
-    const { customerId } = await ensureCustomerWithDefaultCard(stripe, playerId);
+    const { customerId, email } = await ensureCustomerWithDefaultCard(stripe, playerId, {
+      displayName,
+    });
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -62,8 +79,8 @@ export async function handler(event) {
       metadata: {
         playerId,
         amountCents: String(amountCents),
+        ...(email ? { email } : {}),
       },
-      // Prefer the saved demo card; user still confirms Pay in Checkout.
       saved_payment_method_options: {
         allow_redisplay_filters: ['always'],
         payment_method_save: 'enabled',
@@ -74,6 +91,7 @@ export async function handler(event) {
       clientSecret: session.client_secret,
       sessionId: session.id,
       customerId,
+      email: email || null,
     });
   } catch (err) {
     console.error('checkout error', err);
