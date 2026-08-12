@@ -304,12 +304,11 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
         <p className="game-error">Waiting for your balance row in the Wallet Input Table.</p>
       )}
       {message && <p className="wallet-panel-message">{message}</p>}
-      <p className="wallet-panel-hint">
-        Pay right here — Stripe Checkout is embedded with demo Visa •••• 4242 already on file. Same playerId shares this
-        balance with the game library.
-        {!sigmaWrite.configured &&
-          ' Bind walletMoneyControl + creditWalletEvent in the editor to sync the workbook input table.'}
-      </p>
+      {!sigmaWrite.configured && (
+        <p className="wallet-panel-hint">
+          Bind walletMoneyControl + creditWalletEvent in the editor to sync the workbook input table.
+        </p>
+      )}
     </section>
   );
 }
