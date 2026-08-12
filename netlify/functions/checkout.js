@@ -82,7 +82,9 @@ export async function handler(event) {
         ...(email ? { email } : {}),
       },
       saved_payment_method_options: {
-        allow_redisplay_filters: ['always'],
+        // Include the looser values so demo cards attached before the
+        // allow_redisplay backfill still show up as a saved card.
+        allow_redisplay_filters: ['always', 'limited', 'unspecified'],
         payment_method_save: 'enabled',
       },
     });

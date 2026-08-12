@@ -399,6 +399,86 @@ a.wallet-return-link:hover {
   overflow: hidden;
 }
 
+.wallet-payment-transition {
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--on-ink);
+  animation: wallet-transition-in 0.28s ease-out both;
+}
+
+.wallet-payment-transition-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  color: var(--amber);
+  font-family: var(--font-pixel);
+  font-size: 20px;
+  box-shadow: 0 0 28px rgba(255, 200, 87, 0.22);
+}
+
+.wallet-payment-transition.is-processing .wallet-payment-transition-icon {
+  animation: wallet-processing-pulse 1s ease-in-out infinite;
+}
+
+.wallet-payment-transition.is-success .wallet-payment-transition-icon {
+  color: var(--mint);
+  box-shadow: 0 0 32px rgba(124, 246, 200, 0.3);
+}
+
+.wallet-payment-transition.is-error .wallet-payment-transition-icon {
+  color: var(--pixel-pink);
+}
+
+.wallet-payment-transition h2 {
+  margin: 8px 0 0;
+  color: var(--on-ink);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+.wallet-payment-transition p {
+  margin: 0;
+  color: rgba(247, 239, 224, 0.76);
+  font-size: 14px;
+}
+
+.wallet-payment-transition .secondary-button {
+  margin-top: 8px;
+}
+
+@keyframes wallet-transition-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes wallet-processing-pulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
 .game-error {
   margin: 10px 0 0;
   font-family: var(--font-pixel);

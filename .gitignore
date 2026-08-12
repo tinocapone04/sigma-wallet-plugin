@@ -4,6 +4,7 @@ dist
 *.local
 .netlify
 .wallet-store.json
+.stripe-customers.json
 .env
 .env.*
 !.env.example

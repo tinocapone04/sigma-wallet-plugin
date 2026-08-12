@@ -91,8 +91,8 @@ function pick(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-// Cosmetic only: fills the Customer's billing address so demo records look
-// complete. Stripe will not let anyone prefill Checkout's card fields.
+// Also copied onto the card's billing_details, which Checkout requires before
+// it will prefill the saved card.
 function randomDemoAddress() {
   const place = pick(DEMO_CITIES);
   return {
@@ -110,7 +110,25 @@ async function findCustomerByEmail(stripe, email) {
   return listed.data.find((c) => !c.deleted) || null;
 }
 
-async function ensureDefaultTestCard(stripe, customerId) {
+// Checkout only prefills a saved card when the *payment method* carries name,
+// email and a full address — an address on the Customer alone is not enough.
+function billingDetailsFor(customer) {
+  return {
+    name: customer.name || customer.email || 'Sigma Demo Player',
+    email: customer.email || undefined,
+    address: customer.address || randomDemoAddress(),
+  };
+}
+
+function billingDetailsIncomplete(pm) {
+  const details = pm.billing_details || {};
+  const address = details.address || {};
+  return !details.name || !details.email || !address.country || !address.postal_code;
+}
+
+async function ensureDefaultTestCard(stripe, customer) {
+  const customerId = customer.id;
+  const billing_details = billingDetailsFor(customer);
   const existing = await stripe.paymentMethods.list({
     customer: customerId,
     type: 'card',
@@ -118,6 +136,14 @@ async function ensureDefaultTestCard(stripe, customerId) {
   });
   const visa4242 = existing.data.find((pm) => pm.card?.last4 === '4242');
   if (visa4242) {
+    // Backfill cards attached before we set these on create. API-attached
+    // cards default to allow_redisplay 'unspecified', which Checkout hides.
+    const patch = {};
+    if (visa4242.allow_redisplay !== 'always') patch.allow_redisplay = 'always';
+    if (billingDetailsIncomplete(visa4242)) patch.billing_details = billing_details;
+    if (Object.keys(patch).length) {
+      await stripe.paymentMethods.update(visa4242.id, patch);
+    }
     await stripe.customers.update(customerId, {
       invoice_settings: { default_payment_method: visa4242.id },
     });
@@ -127,6 +153,9 @@ async function ensureDefaultTestCard(stripe, customerId) {
   const pm = await stripe.paymentMethods.create({
     type: 'card',
     card: { token: 'tok_visa' },
+    // Required for Checkout to offer this card instead of a blank card form.
+    allow_redisplay: 'always',
+    billing_details,
   });
   await stripe.paymentMethods.attach(pm.id, { customer: customerId });
   await stripe.customers.update(customerId, {
@@ -194,6 +223,8 @@ export async function ensureCustomerWithDefaultCard(stripe, playerId, { displayN
     const patch = {};
     if (email && customer.email !== email) patch.email = email;
     if (name && customer.name !== name) patch.name = name;
+    // Customers found by email lookup may predate the demo address.
+    if (!customer.address?.postal_code) patch.address = randomDemoAddress();
     if (Object.keys(patch).length) {
       customer = await stripe.customers.update(customerId, {
         ...patch,
@@ -207,6 +238,6 @@ export async function ensureCustomerWithDefaultCard(stripe, playerId, { displayN
     }
   }
 
-  const paymentMethodId = await ensureDefaultTestCard(stripe, customerId);
+  const paymentMethodId = await ensureDefaultTestCard(stripe, customer);
   return { customerId, paymentMethodId, email: email || null, sigma };
 }

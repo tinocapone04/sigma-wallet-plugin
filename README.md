@@ -38,11 +38,14 @@ stripe listen --forward-to localhost:3030/api/webhook
    ledger. This needs **no webhook** — crediting is synchronous in the response.
    (`creditCheckoutSession` is idempotent by session id, so an optional webhook
    can still run without double-crediting.)
-6. If Sigma write bindings are configured, the plugin stages the new total into
-   `walletMoneyControl` and fires `creditWalletEvent` so an author-wired
-   **Update row** action can sync the workbook input table.
+6. The plugin reads the viewer's current balance from `walletSource`, adds the
+   paid amount, stages that total into `walletMoneyControl`, and fires
+   `creditWalletEvent` so the author-wired **Update row** action syncs the input
+   table. The displayed Credits value also comes from this table, not the
+   staging control or Blobs ledger.
 7. It posts `sigma-wallet-topup` to the opener/parent so the game library can
-   refresh, then returns to the fund page.
+   refresh, shows a short updating/success transition, then returns to the fund
+   page.
 
 Because `redirect_on_completion` is `never`, Stripe forbids `return_url` — that
 is why there is no success page and no `checkout-return` endpoint.
@@ -55,8 +58,17 @@ setting that does this either.
 
 What we do instead (test mode only): attach `tok_visa` (Visa •••• 4242) as the
 Customer’s default payment method so Checkout shows a **saved card** to
-confirm. New Customers also get a random name + US billing address on the
-Customer object (cosmetic; does not fill Checkout form fields).
+confirm. New Customers also get a random name + US billing address.
+
+Checkout is picky about when it prefills that card. All of this is required,
+and missing any one of them silently falls back to a blank card form:
+
+- the card’s `allow_redisplay` is `always` (API-attached cards default to
+  `unspecified`), or the session lists the other values in
+  `saved_payment_method_options.allow_redisplay_filters`;
+- the **payment method’s own** `billing_details` carry `name`, `email` and a
+  full address — an address on the Customer alone does not count;
+- the session is opened within 30 minutes of being created.
 
 ## API
 

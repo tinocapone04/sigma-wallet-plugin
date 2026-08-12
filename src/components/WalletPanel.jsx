@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js';
 import { readReturnUrl } from '../utils/returnUrl.js';
@@ -19,12 +19,18 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [checkout, setCheckout] = useState(null);
+  const [completion, setCompletion] = useState(null);
   const [customAmount, setCustomAmount] = useState('');
   const [returnUrl, setReturnUrl] = useState(() => readReturnUrl());
-  const sigmaWrite = useSigmaWalletWrite();
+  const completionStartedRef = useRef(false);
+  const returnTimerRef = useRef(null);
+  const sigmaWrite = useSigmaWalletWrite(playerId);
+  const creditCheckout = wallet?.creditCheckout;
+  const refreshUntilCredited = wallet?.refreshUntilCredited;
 
   useEffect(() => {
     setReturnUrl(readReturnUrl());
+    return () => clearTimeout(returnTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -37,28 +43,31 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
   }, [checkout?.clientSecret]);
 
   const handleComplete = useCallback(async () => {
-    setMessage('Payment received — crediting wallet…');
-    try {
-      // Credit directly from the verified Stripe session (no webhook needed).
-      const data = checkout?.sessionId
-        ? await wallet.creditCheckout?.(checkout.sessionId)
-        : await wallet.refreshUntilCredited?.({
+    if (completionStartedRef.current) return;
+    completionStartedRef.current = true;
+
+    const amountDollars = (checkout?.amountCents || 0) / 100;
+    setCompletion({
+      status: 'processing',
+      title: 'Payment received',
+      detail: 'Updating your Sigma wallet…',
+    });
+
+    // Stripe has already confirmed payment. Credit the shared API ledger and
+    // fire Sigma's Update-row action independently so one cannot suppress the
+    // other. The Sigma target is input-table balance + the amount just paid.
+    const [ledgerResult, sigmaResult] = await Promise.allSettled([
+      checkout?.sessionId
+        ? creditCheckout?.(checkout.sessionId)
+        : refreshUntilCredited?.({
             previousBalanceCents: checkout?.previousBalanceCents,
-          });
-      const newBalance =
-        data?.balance ??
-        (data?.balanceCents != null ? data.balanceCents / 100 : wallet.balance);
+          }),
+      sigmaWrite.configured
+        ? sigmaWrite.addToBalance(amountDollars)
+        : Promise.resolve({ written: false, reason: 'not_configured' }),
+    ]);
 
-      if (sigmaWrite.configured && newBalance != null) {
-        setMessage('Payment received — updating workbook…');
-        const result = await sigmaWrite.writeBalance(newBalance);
-        setMessage(result.written ? 'Wallet updated.' : 'Wallet credited (workbook sync skipped).');
-      } else if (sigmaWrite.configured) {
-        setMessage('Wallet updated.');
-      } else {
-        setMessage('Wallet credited. Bind creditWalletEvent to sync the input table.');
-      }
-
+    if (ledgerResult.status === 'fulfilled') {
       // The game library listens for this to refresh without a reload.
       try {
         window.opener?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
@@ -66,13 +75,63 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
       } catch {
         // ignore
       }
-    } catch (err) {
-      setMessage(`Paid, but the balance did not refresh (${err.message}).`);
-    } finally {
-      setCheckout(null);
-      setBusy(false);
     }
-  }, [wallet, checkout?.sessionId, checkout?.previousBalanceCents, playerId, sigmaWrite]);
+
+    const sigmaWriteResult = sigmaResult.status === 'fulfilled' ? sigmaResult.value : null;
+    const sigmaUpdated = Boolean(sigmaWriteResult?.written);
+    const ledgerUpdated = ledgerResult.status === 'fulfilled';
+
+    if (sigmaUpdated && ledgerUpdated) {
+      setCompletion({
+        status: 'success',
+        title: `+$${amountDollars.toFixed(2)} added`,
+        detail: `New balance: $${sigmaWriteResult.balance.toFixed(2)}`,
+      });
+      setMessage('Wallet updated.');
+      returnTimerRef.current = setTimeout(() => {
+        setCompletion(null);
+        completionStartedRef.current = false;
+        setCheckout(null);
+        setBusy(false);
+      }, 1400);
+      return;
+    }
+
+    const reason =
+      sigmaResult.status === 'rejected'
+        ? sigmaResult.reason?.message
+        : sigmaWriteResult?.reason;
+    setCompletion({
+      status: 'error',
+      title: 'Payment received',
+      detail: !sigmaUpdated
+        ? `Sigma update needs attention${reason ? ` (${reason})` : ''}.`
+        : 'The shared wallet ledger did not refresh.',
+    });
+    setMessage(
+      sigmaUpdated
+        ? 'Sigma balance updated; shared ledger sync failed.'
+        : 'Paid, but the Sigma input-table action did not complete.',
+    );
+    setBusy(false);
+  }, [
+    checkout?.amountCents,
+    checkout?.sessionId,
+    checkout?.previousBalanceCents,
+    creditCheckout,
+    refreshUntilCredited,
+    playerId,
+    sigmaWrite.configured,
+    sigmaWrite.addToBalance,
+  ]);
+
+  const returnToWallet = useCallback(() => {
+    clearTimeout(returnTimerRef.current);
+    setCompletion(null);
+    completionStartedRef.current = false;
+    setCheckout(null);
+    setBusy(false);
+  }, []);
 
   const checkoutOptions = useMemo(
     () => ({ fetchClientSecret, onComplete: handleComplete }),
@@ -86,8 +145,14 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
       setMessage('Set VITE_STRIPE_PUBLISHABLE_KEY to enable Stripe Checkout.');
       return;
     }
+    if (sigmaWrite.readConfigured && sigmaWrite.balance == null) {
+      setMessage('Waiting for your balance row in the Wallet Input Table.');
+      return;
+    }
     setBusy(true);
     setMessage(null);
+    setCompletion(null);
+    completionStartedRef.current = false;
     try {
       const previousBalanceCents = wallet.balanceCents ?? Math.round((wallet.balance || 0) * 100);
       const data = await wallet.topUp(cents);
@@ -99,6 +164,7 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
       });
     } catch (err) {
       setMessage(err.message || 'Top-up failed');
+      setCheckout(null);
       setBusy(false);
     }
   }
@@ -119,33 +185,54 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
   }
 
   function handleCancelCheckout() {
-    setCheckout(null);
-    setBusy(false);
+    returnToWallet();
     setMessage('Top-up canceled.');
   }
 
+  const displayedBalance = sigmaWrite.readConfigured ? sigmaWrite.balance : wallet.balance;
   const balanceLabel =
-    wallet.status === 'ready' || wallet.status === 'loading'
-      ? `$${(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    displayedBalance != null
+      ? `$${displayedBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : '—';
 
-  const actionsDisabled = busy || Boolean(checkout) || wallet.status === 'needs-config';
+  const actionsDisabled =
+    busy ||
+    Boolean(checkout) ||
+    wallet.status === 'needs-config' ||
+    (sigmaWrite.readConfigured && sigmaWrite.balance == null);
 
   // Page B: full-panel Stripe Checkout (hides fund UI via onCheckoutChange).
   if (checkout && stripePromise) {
     return (
       <section className="wallet-panel wallet-panel-checkout" aria-label="Checkout">
         <div className="wallet-checkout-embed">
-          <div className="wallet-checkout-embed-header">
-            <strong>Add ${(checkout.amountCents / 100).toFixed(2)}</strong>
-            <button type="button" className="secondary-button" onClick={handleCancelCheckout}>
-              Cancel
-            </button>
-          </div>
-          {message && <p className="wallet-panel-message">{message}</p>}
-          <EmbeddedCheckoutProvider stripe={stripePromise} options={checkoutOptions}>
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
+          {completion ? (
+            <div className={`wallet-payment-transition is-${completion.status}`} role="status" aria-live="polite">
+              <span className="wallet-payment-transition-icon" aria-hidden="true">
+                {completion.status === 'processing' ? '···' : completion.status === 'success' ? '✓' : '!'}
+              </span>
+              <h2>{completion.title}</h2>
+              <p>{completion.detail}</p>
+              {completion.status !== 'processing' && (
+                <button type="button" className="secondary-button" onClick={returnToWallet}>
+                  Back to wallet
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="wallet-checkout-embed-header">
+                <strong>Add ${(checkout.amountCents / 100).toFixed(2)}</strong>
+                <button type="button" className="secondary-button" onClick={handleCancelCheckout}>
+                  Cancel
+                </button>
+              </div>
+              {message && <p className="wallet-panel-message">{message}</p>}
+              <EmbeddedCheckoutProvider stripe={stripePromise} options={checkoutOptions}>
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </>
+          )}
         </div>
       </section>
     );
@@ -203,6 +290,9 @@ export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
 
       {wallet.status === 'error' && <p className="game-error">Wallet error: {wallet.error}</p>}
       {wallet.status === 'needs-config' && <p className="game-error">Waiting for viewer email / player id.</p>}
+      {sigmaWrite.readConfigured && sigmaWrite.balance == null && (
+        <p className="game-error">Waiting for your balance row in the Wallet Input Table.</p>
+      )}
       {message && <p className="wallet-panel-message">{message}</p>}
       <p className="wallet-panel-hint">
         Pay right here — Stripe Checkout is embedded with demo Visa •••• 4242 already on file. Same playerId shares this
