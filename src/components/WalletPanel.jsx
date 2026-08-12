@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { readReturnUrl } from '../utils/returnUrl.js';
 
 const TOP_UP_OPTIONS = [
   { label: '$5', cents: 500 },
@@ -9,6 +10,11 @@ const TOP_UP_OPTIONS = [
 export default function WalletPanel({ wallet, playerId }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
+  const [returnUrl, setReturnUrl] = useState(() => readReturnUrl());
+
+  useEffect(() => {
+    setReturnUrl(readReturnUrl());
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -16,29 +22,51 @@ export default function WalletPanel({ wallet, playerId }) {
     if (!topup) return undefined;
 
     async function finish() {
+      const back = readReturnUrl();
+      setReturnUrl(back);
+
       if (topup === 'success') {
         setMessage('Funds added — refreshing wallet…');
         try {
-          // Blobs reads are eventually consistent; retry once after a short wait.
           await wallet.refresh?.();
           await new Promise((r) => setTimeout(r, 1500));
           await wallet.refresh?.();
           setMessage('Wallet updated.');
+          try {
+            window.opener?.postMessage(
+              { type: 'sigma-wallet-topup', status: 'success', playerId },
+              '*',
+            );
+          } catch {
+            // ignore
+          }
+          if (back) {
+            setMessage('Wallet updated. Returning to Sigma…');
+            setTimeout(() => {
+              window.location.assign(back);
+            }, 1200);
+          }
         } catch (err) {
           setMessage(`Could not refresh wallet (${err.message}).`);
         }
       } else if (topup === 'cancel') {
         setMessage('Top-up canceled.');
+        if (back) {
+          setTimeout(() => {
+            window.location.assign(back);
+          }, 800);
+        }
       }
       params.delete('topup');
       params.delete('session_id');
+      // Keep playerId / displayName / returnUrl so identity survives Checkout return.
       const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`;
       window.history.replaceState({}, '', next);
     }
 
     finish();
     return undefined;
-  }, [wallet]);
+  }, [wallet, playerId]);
 
   if (!wallet || wallet.mode !== 'paid') return null;
 
@@ -46,7 +74,12 @@ export default function WalletPanel({ wallet, playerId }) {
     setBusy(true);
     setMessage(null);
     try {
-      await wallet.topUp(cents);
+      const result = await wallet.topUp(cents);
+      if (result?.openMode === 'tab') {
+        setMessage('Checkout opened in a new tab — finish there, then come back to Sigma (or hit Refresh).');
+        setBusy(false);
+      }
+      // If we navigated top/same, this page unloads.
     } catch (err) {
       setMessage(err.message || 'Top-up failed');
       setBusy(false);
@@ -100,6 +133,11 @@ export default function WalletPanel({ wallet, playerId }) {
           >
             Refresh
           </button>
+          {returnUrl && (
+            <a className="secondary-button wallet-return-link" href={returnUrl}>
+              Back to Sigma
+            </a>
+          )}
           {wallet.devCredit && (
             <button
               type="button"
@@ -118,6 +156,9 @@ export default function WalletPanel({ wallet, playerId }) {
       <p className="wallet-panel-hint">
         Owned games: {(wallet.ownedGameIds || []).length ? wallet.ownedGameIds.join(', ') : 'none yet'}. Buy and play from
         the game library plugin — same playerId shares this balance.
+        {returnUrl
+          ? ' After Stripe, you will be sent back to your Sigma workbook.'
+          : ' Tip: add &returnUrl=<your workbook URL> to the embed so Checkout returns to Sigma.'}
       </p>
     </section>
   );

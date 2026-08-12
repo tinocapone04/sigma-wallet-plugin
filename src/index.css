@@ -180,9 +180,25 @@ body {
 }
 
 .wallet-topup-button,
-.wallet-panel-actions .secondary-button {
+.wallet-panel-actions .secondary-button,
+.wallet-return-link {
   padding: 8px 12px;
   font-size: 13px;
+}
+
+a.wallet-return-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  background: var(--accent);
+  border-color: transparent;
+  color: #0a120e;
+  font-weight: 600;
+}
+
+a.wallet-return-link:hover {
+  filter: brightness(1.06);
+  color: #0a120e;
 }
 
 .wallet-panel-message {

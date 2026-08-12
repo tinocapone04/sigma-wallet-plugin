@@ -23,7 +23,8 @@ stripe listen --forward-to localhost:8890/api/webhook
 
 | Endpoint | Role |
 |---|---|
-| `POST /api/checkout` | `{ playerId, amountCents }` → Checkout URL |
+| `POST /api/checkout` | `{ playerId, amountCents, returnUrl? }` → Checkout URL |
+| `GET /api/checkout-return` | After Stripe: wait for webhook credit, redirect to `returnUrl` / wallet UI |
 | `POST /api/webhook` | Credits wallet on `checkout.session.completed` |
 | `GET /api/wallet?playerId=` | Balance + owned games |
 | `POST /api/purchase` | Debit + unlock game |
@@ -35,5 +36,27 @@ Prices: `netlify/functions/_shared/prices.js` — keep in sync with
 
 ## Sigma
 
+### As a plugin
 Bind viewer email (`CurrentUserEmail()`) in the editor panel. That email is
 `playerId` for every wallet API call from this plugin and from the game library.
+
+### As an Embed (iframe)
+No plugin registration needed. Add a Sigma **Embed** whose URL includes the
+viewer identity as query params (same `playerId` the game library uses):
+
+```
+https://sigma-wallet-plugin.netlify.app/?playerId={{CurrentUserEmail()}}&displayName={{CurrentUserFullName()}}&returnUrl=https%3A%2F%2Fapp.sigmacomputing.com%2FYOUR_ORG%2Fworkbook%2FYOUR_WORKBOOK
+```
+
+- `playerId` (required) — also accepts `email`
+- `displayName` (optional) — also accepts `name`
+- `returnUrl` (optional) — your Sigma workbook URL (URL-encoded). Stored with
+  the Checkout session; after Stripe, `/api/checkout-return` **waits for the
+  webhook to credit the wallet**, then 302s you back to this workbook.
+  A **Back to Sigma** button also appears when this is set.
+
+Flow: Checkout → Stripe → webhook credits ledger → `checkout-return` redirects
+to Sigma. Checkout opens in a **new tab** when possible so the workbook stays open.
+
+**Note:** Stripe Checkout cannot load inside a Sigma iframe.
+

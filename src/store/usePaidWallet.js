@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { readReturnUrl } from '../utils/returnUrl.js';
 
 // Talks to the Netlify Functions Stripe wallet API when `VITE_API_BASE` is
 // set. Balance is dollars (to match Roulette / the existing local+Sigma
@@ -29,6 +30,23 @@ async function apiFetch(path, options = {}) {
     throw err;
   }
   return data;
+}
+
+// Stripe Checkout refuses iframes. Open a new tab so the Sigma workbook stays
+// open; fall back to top-window navigation if the popup is blocked.
+function navigateToCheckout(checkoutUrl) {
+  const opened = window.open(checkoutUrl, '_blank');
+  if (opened) return 'tab';
+  try {
+    if (window.top && window.top !== window) {
+      window.top.location.assign(checkoutUrl);
+      return 'top';
+    }
+  } catch {
+    // ignore
+  }
+  window.location.assign(checkoutUrl);
+  return 'same';
 }
 
 export function usePaidWallet(playerId) {
@@ -65,21 +83,32 @@ export function usePaidWallet(playerId) {
     refresh();
   }, [refresh]);
 
+  // Refresh when Checkout finishes in another tab and posts back.
+  useEffect(() => {
+    function onMessage(event) {
+      const data = event.data;
+      if (!data || data.type !== 'sigma-wallet-topup') return;
+      if (data.status === 'success') refresh();
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [refresh]);
+
   const topUp = useCallback(
     async (amountCents) => {
       if (!playerId) throw new Error('player_id_required');
+      const returnUrl = readReturnUrl();
       const data = await apiFetch('/api/checkout', {
         method: 'POST',
-        body: JSON.stringify({ playerId, amountCents }),
+        body: JSON.stringify({ playerId, amountCents, returnUrl: returnUrl || undefined }),
       });
       if (!data.checkoutUrl) throw new Error('missing_checkout_url');
-      window.location.assign(data.checkoutUrl);
-      return data;
+      const mode = navigateToCheckout(data.checkoutUrl);
+      return { ...data, openMode: mode };
     },
     [playerId],
   );
 
-  // Local smoke-test helper when Stripe keys aren't configured yet.
   const devCredit = useCallback(
     async (amountCents = 1000) => {
       if (!playerId) throw new Error('player_id_required');
@@ -106,10 +135,9 @@ export function usePaidWallet(playerId) {
       applyWallet(data);
       return data;
     },
-    [playerId, applyWallet],
+    [playerId],
   );
 
-  // Roulette settles whole-dollar balances; convert to cents for the API.
   const updateBalance = useCallback(
     async (newBalanceDollars) => {
       if (!playerId) return;

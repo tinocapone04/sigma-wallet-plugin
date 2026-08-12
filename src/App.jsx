@@ -8,7 +8,10 @@ export default function App() {
   const { player, setDisplayName } = useLocalPlayerId();
   const identity = useViewerIdentity(player?.id);
   const playerId = identity.playerId;
-  const displayName = identity.adapter === 'sigma' ? identity.displayName : player?.displayName;
+  const displayName =
+    identity.adapter === 'sigma' || identity.adapter === 'embed'
+      ? identity.displayName
+      : player?.displayName;
   const wallet = usePaidWallet(playerId);
   const [nameInput, setNameInput] = useState('');
 
@@ -18,6 +21,7 @@ export default function App() {
         <p>
           Bind the &quot;Current-viewer element&quot; and &quot;Viewer email column&quot; fields in the plugin&apos;s
           editor panel to an element with a Calculation column set to <code>CurrentUserEmail()</code>.
+          Or use a Sigma Embed URL with <code>?playerId=…</code> (see README).
         </p>
       </Screen>
     );
