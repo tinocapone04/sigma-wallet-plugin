@@ -2,9 +2,10 @@ import Stripe from 'stripe';
 import { json, noContent, readJson, siteUrl } from './_shared/http.js';
 import { bindBlobs } from './_shared/walletStore.js';
 import { saveCheckoutIntent } from './_shared/checkoutIntent.js';
+import { ensureCustomerWithDefaultCard } from './_shared/stripeCustomer.js';
 
-const MIN_CENTS = 100; // $1
-const MAX_CENTS = 10000; // $100
+const MIN_CENTS = 100;
+const MAX_CENTS = 10000;
 const ALLOWED = new Set([500, 1000, 2500, 5000]);
 
 function sanitizeHttpUrl(raw) {
@@ -43,14 +44,16 @@ export async function handler(event) {
   const stripe = new Stripe(secret);
   const origin = siteUrl(event);
 
-  // Always return through our API so we can wait for the Stripe webhook credit,
-  // then bounce to Sigma (returnUrl) or the wallet UI.
   const success_url = `${origin}/api/checkout-return?session_id={CHECKOUT_SESSION_ID}&status=success`;
   const cancel_url = `${origin}/api/checkout-return?session_id={CHECKOUT_SESSION_ID}&status=cancel`;
 
   try {
+    // Attach demo Visa 4242 as the customer's default so Checkout shows it on file.
+    const { customerId } = await ensureCustomerWithDefaultCard(stripe, playerId);
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      customer: customerId,
       payment_method_types: ['card'],
       line_items: [
         {
@@ -69,15 +72,27 @@ export async function handler(event) {
         playerId,
         amountCents: String(amountCents),
       },
+      // Prefer the saved demo card; user still confirms Pay in Checkout.
+      saved_payment_method_options: {
+        allow_redisplay_filters: ['always'],
+        payment_method_save: 'enabled',
+      },
       success_url,
       cancel_url,
     });
 
     await saveCheckoutIntent(session.id, { playerId, returnUrl, amountCents });
 
-    return json(200, { checkoutUrl: session.url, sessionId: session.id });
+    return json(200, {
+      checkoutUrl: session.url,
+      sessionId: session.id,
+      customerId,
+    });
   } catch (err) {
     console.error('checkout error', err);
-    return json(500, { error: 'checkout_failed', message: err.message });
+    return json(500, {
+      error: 'checkout_failed',
+      message: err.message,
+    });
   }
 }

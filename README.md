@@ -1,8 +1,9 @@
 # Sigma Wallet Plugin
 
 Owns Stripe Checkout + the shared wallet ledger (Netlify Functions + Blobs).
-The game library plugin calls this site’s `/api/*` with the same `playerId`
-(viewer email) for purchases and Roulette settles — it does not host Stripe.
+Every user gets a Stripe Customer with **demo Visa 4242** already on file, so
+Checkout opens the payment portal and they only confirm Pay (no card typing).
+The game library calls this site’s `/api/*` with the same `playerId` (email).
 
 ## Quick start
 
@@ -23,9 +24,10 @@ stripe listen --forward-to localhost:8890/api/webhook
 
 | Endpoint | Role |
 |---|---|
-| `POST /api/checkout` | `{ playerId, amountCents, returnUrl? }` → Checkout URL |
-| `GET /api/checkout-return` | After Stripe: wait for webhook credit, redirect to `returnUrl` / wallet UI |
+| `POST /api/checkout` | Ensure demo card on file → Checkout Session URL |
+| `GET /api/checkout-return` | Wait for webhook credit, redirect to `returnUrl` / wallet UI |
 | `POST /api/webhook` | Credits wallet on `checkout.session.completed` |
+| `POST /api/topup` | Optional silent charge (`pm_card_visa`); UI uses Checkout |
 | `GET /api/wallet?playerId=` | Balance + owned games |
 | `POST /api/purchase` | Debit + unlock game |
 | `POST /api/wallet-adjust` | Roulette delta |
@@ -41,22 +43,13 @@ Bind viewer email (`CurrentUserEmail()`) in the editor panel. That email is
 `playerId` for every wallet API call from this plugin and from the game library.
 
 ### As an Embed (iframe)
-No plugin registration needed. Add a Sigma **Embed** whose URL includes the
-viewer identity as query params (same `playerId` the game library uses):
-
 ```
 https://sigma-wallet-plugin.netlify.app/?playerId={{CurrentUserEmail()}}&displayName={{CurrentUserFullName()}}&returnUrl=https%3A%2F%2Fapp.sigmacomputing.com%2FYOUR_ORG%2Fworkbook%2FYOUR_WORKBOOK
 ```
 
 - `playerId` (required) — also accepts `email`
 - `displayName` (optional) — also accepts `name`
-- `returnUrl` (optional) — your Sigma workbook URL (URL-encoded). Stored with
-  the Checkout session; after Stripe, `/api/checkout-return` **waits for the
-  webhook to credit the wallet**, then 302s you back to this workbook.
-  A **Back to Sigma** button also appears when this is set.
+- `returnUrl` (optional) — workbook URL; after Checkout + webhook credit, redirect here
 
-Flow: Checkout → Stripe → webhook credits ledger → `checkout-return` redirects
-to Sigma. Checkout opens in a **new tab** when possible so the workbook stays open.
-
-**Note:** Stripe Checkout cannot load inside a Sigma iframe.
-
+Checkout opens in a new tab (Stripe blocks iframes). Demo Visa •••• 4242 is
+pre-attached (test mode only via `tok_visa`).

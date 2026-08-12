@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { readReturnUrl } from '../utils/returnUrl.js';
 
-// Talks to the Netlify Functions Stripe wallet API when `VITE_API_BASE` is
-// set. Balance is dollars (to match Roulette / the existing local+Sigma
-// wallets); owned games and top-ups go through the API ledger.
+// Talks to the shared wallet Netlify API when `VITE_API_BASE` is set.
+// Top-up opens Stripe Checkout; each user already has demo Visa 4242 on file.
 
 function apiBase() {
   const raw = import.meta.env.VITE_API_BASE;
@@ -32,8 +31,6 @@ async function apiFetch(path, options = {}) {
   return data;
 }
 
-// Stripe Checkout refuses iframes. Open a new tab so the Sigma workbook stays
-// open; fall back to top-window navigation if the popup is blocked.
 function navigateToCheckout(checkoutUrl) {
   const opened = window.open(checkoutUrl, '_blank');
   if (opened) return 'tab';
@@ -83,7 +80,6 @@ export function usePaidWallet(playerId) {
     refresh();
   }, [refresh]);
 
-  // Refresh when Checkout finishes in another tab and posts back.
   useEffect(() => {
     function onMessage(event) {
       const data = event.data;
@@ -135,7 +131,7 @@ export function usePaidWallet(playerId) {
       applyWallet(data);
       return data;
     },
-    [playerId],
+    [playerId, applyWallet],
   );
 
   const updateBalance = useCallback(

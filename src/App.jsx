@@ -71,7 +71,8 @@ export default function App() {
         <p className="wallet-brand">Sigma Wallet</p>
         <h1>Fund your balance</h1>
         <p className="wallet-lede">
-          Top up with Stripe. The game library spends the same wallet using your email as player id
+          Top up via Stripe Checkout — every user has demo Visa •••• 4242 on file to confirm. The game library spends
+          the same wallet using your email as player id
           {displayName ? ` (${displayName})` : ''}.
         </p>
       </header>

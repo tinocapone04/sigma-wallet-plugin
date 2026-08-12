@@ -59,7 +59,6 @@ export default function WalletPanel({ wallet, playerId }) {
       }
       params.delete('topup');
       params.delete('session_id');
-      // Keep playerId / displayName / returnUrl so identity survives Checkout return.
       const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`;
       window.history.replaceState({}, '', next);
     }
@@ -76,10 +75,9 @@ export default function WalletPanel({ wallet, playerId }) {
     try {
       const result = await wallet.topUp(cents);
       if (result?.openMode === 'tab') {
-        setMessage('Checkout opened in a new tab — finish there, then come back to Sigma (or hit Refresh).');
+        setMessage('Stripe Checkout opened — confirm with the saved Visa •••• 4242, then return here or wait for redirect.');
         setBusy(false);
       }
-      // If we navigated top/same, this page unloads.
     } catch (err) {
       setMessage(err.message || 'Top-up failed');
       setBusy(false);
@@ -154,11 +152,9 @@ export default function WalletPanel({ wallet, playerId }) {
       {wallet.status === 'needs-config' && <p className="game-error">Waiting for viewer email / player id.</p>}
       {message && <p className="wallet-panel-message">{message}</p>}
       <p className="wallet-panel-hint">
-        Owned games: {(wallet.ownedGameIds || []).length ? wallet.ownedGameIds.join(', ') : 'none yet'}. Buy and play from
-        the game library plugin — same playerId shares this balance.
-        {returnUrl
-          ? ' After Stripe, you will be sent back to your Sigma workbook.'
-          : ' Tip: add &returnUrl=<your workbook URL> to the embed so Checkout returns to Sigma.'}
+        Opens Stripe Checkout with demo Visa •••• 4242 already on file — just confirm Pay. Same playerId shares this
+        balance with the game library.
+        {returnUrl ? ' After payment you return to Sigma once the webhook credits the wallet.' : ''}
       </p>
     </section>
   );
