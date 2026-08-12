@@ -1,0 +1,27 @@
+{
+  "name": "sigma-wallet-plugin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "dev:full": "npx netlify dev"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.12",
+    "@sigmacomputing/plugin": "1.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "stripe": "^22.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.5",
+    "netlify-cli": "^27.1.1",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  }
+}
