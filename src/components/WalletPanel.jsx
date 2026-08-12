@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js';
 import { readReturnUrl } from '../utils/returnUrl.js';
 
 const TOP_UP_OPTIONS = [
@@ -7,77 +9,69 @@ const TOP_UP_OPTIONS = [
   { label: '$25', cents: 2500 },
 ];
 
+const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+
 export default function WalletPanel({ wallet, playerId }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
+  const [checkout, setCheckout] = useState(null);
   const [returnUrl, setReturnUrl] = useState(() => readReturnUrl());
 
   useEffect(() => {
     setReturnUrl(readReturnUrl());
   }, []);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const topup = params.get('topup');
-    if (!topup) return undefined;
+  const fetchClientSecret = useCallback(async () => {
+    if (!checkout?.clientSecret) throw new Error('missing_client_secret');
+    return checkout.clientSecret;
+  }, [checkout?.clientSecret]);
 
-    async function finish() {
-      const back = readReturnUrl();
-      setReturnUrl(back);
-
-      if (topup === 'success') {
-        setMessage('Funds added — refreshing wallet…');
-        try {
-          await wallet.refresh?.();
-          await new Promise((r) => setTimeout(r, 1500));
-          await wallet.refresh?.();
-          setMessage('Wallet updated.');
-          try {
-            window.opener?.postMessage(
-              { type: 'sigma-wallet-topup', status: 'success', playerId },
-              '*',
-            );
-          } catch {
-            // ignore
-          }
-          if (back) {
-            setMessage('Wallet updated. Returning to Sigma…');
-            setTimeout(() => {
-              window.location.assign(back);
-            }, 1200);
-          }
-        } catch (err) {
-          setMessage(`Could not refresh wallet (${err.message}).`);
-        }
-      } else if (topup === 'cancel') {
-        setMessage('Top-up canceled.');
-        if (back) {
-          setTimeout(() => {
-            window.location.assign(back);
-          }, 800);
-        }
+  const handleComplete = useCallback(async () => {
+    setMessage('Payment received — crediting wallet…');
+    try {
+      await wallet.refreshUntilCredited?.({
+        previousBalanceCents: checkout?.previousBalanceCents,
+      });
+      setMessage('Wallet updated.');
+      // The game library listens for this to refresh without a reload.
+      try {
+        window.opener?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
+        window.parent?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
+      } catch {
+        // ignore
       }
-      params.delete('topup');
-      params.delete('session_id');
-      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`;
-      window.history.replaceState({}, '', next);
+    } catch (err) {
+      setMessage(`Paid, but the balance did not refresh (${err.message}). Try Refresh.`);
+    } finally {
+      setCheckout(null);
+      setBusy(false);
     }
+  }, [wallet, checkout?.previousBalanceCents, playerId]);
 
-    finish();
-    return undefined;
-  }, [wallet, playerId]);
+  const checkoutOptions = useMemo(
+    () => ({ fetchClientSecret, onComplete: handleComplete }),
+    [fetchClientSecret, handleComplete],
+  );
 
   if (!wallet || wallet.mode !== 'paid') return null;
 
   async function handleTopUp(cents) {
+    if (!stripePromise) {
+      setMessage('Set VITE_STRIPE_PUBLISHABLE_KEY to enable Stripe Checkout.');
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
-      const result = await wallet.topUp(cents);
-      if (result?.openMode === 'tab') {
-        setMessage('Stripe Checkout opened — confirm with the saved Visa •••• 4242, then return here or wait for redirect.');
-        setBusy(false);
-      }
+      const previousBalanceCents = wallet.balanceCents ?? Math.round((wallet.balance || 0) * 100);
+      const data = await wallet.topUp(cents);
+      setCheckout({
+        clientSecret: data.clientSecret,
+        sessionId: data.sessionId,
+        amountCents: cents,
+        previousBalanceCents,
+      });
     } catch (err) {
       setMessage(err.message || 'Top-up failed');
       setBusy(false);
@@ -96,6 +90,12 @@ export default function WalletPanel({ wallet, playerId }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleCancelCheckout() {
+    setCheckout(null);
+    setBusy(false);
+    setMessage('Top-up canceled.');
   }
 
   const balanceLabel =
@@ -117,7 +117,7 @@ export default function WalletPanel({ wallet, playerId }) {
               key={opt.cents}
               type="button"
               className="secondary-button wallet-topup-button"
-              disabled={busy || wallet.status === 'needs-config'}
+              disabled={busy || Boolean(checkout) || wallet.status === 'needs-config'}
               onClick={() => handleTopUp(opt.cents)}
             >
               Add {opt.label}
@@ -152,10 +152,23 @@ export default function WalletPanel({ wallet, playerId }) {
       {wallet.status === 'needs-config' && <p className="game-error">Waiting for viewer email / player id.</p>}
       {message && <p className="wallet-panel-message">{message}</p>}
       <p className="wallet-panel-hint">
-        Opens Stripe Checkout with demo Visa •••• 4242 already on file — just confirm Pay. Same playerId shares this
-        balance with the game library.
-        {returnUrl ? ' After payment you return to Sigma once the webhook credits the wallet.' : ''}
+        Pay right here — Stripe Checkout is embedded in this plugin with demo Visa •••• 4242 already on file. Same
+        playerId shares this balance with the game library.
       </p>
+
+      {checkout && stripePromise && (
+        <div className="wallet-checkout-embed">
+          <div className="wallet-checkout-embed-header">
+            <strong>Add ${(checkout.amountCents / 100).toFixed(2)}</strong>
+            <button type="button" className="secondary-button" onClick={handleCancelCheckout}>
+              Cancel
+            </button>
+          </div>
+          <EmbeddedCheckoutProvider stripe={stripePromise} options={checkoutOptions}>
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
+      )}
     </section>
   );
 }

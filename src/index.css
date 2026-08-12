@@ -214,6 +214,25 @@ a.wallet-return-link:hover {
   line-height: 1.4;
 }
 
+.wallet-checkout-embed {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.wallet-checkout-embed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* Stripe injects its own iframe here; give it room inside the plugin panel. */
+.wallet-checkout-embed > div:last-child {
+  min-height: 340px;
+}
+
 .game-error {
   margin: 10px 0 0;
   color: var(--danger);

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { readReturnUrl } from '../utils/returnUrl.js';
 
 // Talks to the shared wallet Netlify API when `VITE_API_BASE` is set.
-// Top-up opens Stripe Checkout; each user already has demo Visa 4242 on file.
+// Top-up creates an Embedded Checkout session that the UI mounts in-page;
+// each user already has demo Visa 4242 on file.
 
 function apiBase() {
   const raw = import.meta.env.VITE_API_BASE;
@@ -29,21 +29,6 @@ async function apiFetch(path, options = {}) {
     throw err;
   }
   return data;
-}
-
-function navigateToCheckout(checkoutUrl) {
-  const opened = window.open(checkoutUrl, '_blank');
-  if (opened) return 'tab';
-  try {
-    if (window.top && window.top !== window) {
-      window.top.location.assign(checkoutUrl);
-      return 'top';
-    }
-  } catch {
-    // ignore
-  }
-  window.location.assign(checkoutUrl);
-  return 'same';
 }
 
 export function usePaidWallet(playerId) {
@@ -90,19 +75,39 @@ export function usePaidWallet(playerId) {
     return () => window.removeEventListener('message', onMessage);
   }, [refresh]);
 
+  // Creates the session only; the caller mounts Stripe's embedded UI with the
+  // returned client secret, so the player never leaves this page.
   const topUp = useCallback(
     async (amountCents) => {
       if (!playerId) throw new Error('player_id_required');
-      const returnUrl = readReturnUrl();
       const data = await apiFetch('/api/checkout', {
         method: 'POST',
-        body: JSON.stringify({ playerId, amountCents, returnUrl: returnUrl || undefined }),
+        body: JSON.stringify({ playerId, amountCents }),
       });
-      if (!data.checkoutUrl) throw new Error('missing_checkout_url');
-      const mode = navigateToCheckout(data.checkoutUrl);
-      return { ...data, openMode: mode };
+      if (!data.clientSecret) throw new Error('missing_client_secret');
+      return data;
     },
     [playerId],
+  );
+
+  // Checkout completes before Stripe's webhook lands, so poll the ledger for
+  // the credit rather than showing a stale balance.
+  const refreshUntilCredited = useCallback(
+    async ({ previousBalanceCents, timeoutMs = 20000, intervalMs = 800 } = {}) => {
+      if (!playerId) return null;
+      const start = Date.now();
+      let last = null;
+      while (Date.now() - start < timeoutMs) {
+        const data = await apiFetch(`/api/wallet?playerId=${encodeURIComponent(playerId)}`);
+        last = data;
+        applyWallet(data);
+        const nextCents = data.balanceCents ?? Math.round((data.balance || 0) * 100);
+        if (previousBalanceCents == null || nextCents > previousBalanceCents) return data;
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+      return last;
+    },
+    [playerId, applyWallet],
   );
 
   const devCredit = useCallback(
@@ -161,6 +166,7 @@ export function usePaidWallet(playerId) {
     error,
     mode: 'paid',
     refresh,
+    refreshUntilCredited,
     topUp,
     devCredit: import.meta.env.VITE_ALLOW_DEV_CREDIT === 'true' ? devCredit : undefined,
     purchaseGame,

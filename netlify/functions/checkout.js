@@ -1,24 +1,16 @@
 import Stripe from 'stripe';
-import { json, noContent, readJson, siteUrl } from './_shared/http.js';
+import { json, noContent, readJson } from './_shared/http.js';
 import { bindBlobs } from './_shared/walletStore.js';
-import { saveCheckoutIntent } from './_shared/checkoutIntent.js';
 import { ensureCustomerWithDefaultCard } from './_shared/stripeCustomer.js';
 
 const MIN_CENTS = 100;
 const MAX_CENTS = 10000;
 const ALLOWED = new Set([500, 1000, 2500, 5000]);
 
-function sanitizeHttpUrl(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  try {
-    const u = new URL(raw.trim());
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
+// Embedded Checkout: returns a client_secret the wallet UI mounts in-page, so
+// payment happens inside the plugin iframe instead of a new tab. Nothing ever
+// redirects, so there is no success_url / checkout-return hop - the webhook
+// credits the ledger and the client polls /api/wallet for the new balance.
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return noContent();
   if (event.httpMethod !== 'POST') return json(405, { error: 'method_not_allowed' });
@@ -32,7 +24,6 @@ export async function handler(event) {
 
   const playerId = String(body.playerId || '').trim();
   const amountCents = Math.floor(Number(body.amountCents));
-  const returnUrl = sanitizeHttpUrl(body.returnUrl);
   if (!playerId) return json(400, { error: 'player_id_required' });
   if (!Number.isFinite(amountCents) || amountCents < MIN_CENTS || amountCents > MAX_CENTS) {
     return json(400, { error: 'invalid_amount' });
@@ -42,10 +33,6 @@ export async function handler(event) {
   }
 
   const stripe = new Stripe(secret);
-  const origin = siteUrl(event);
-
-  const success_url = `${origin}/api/checkout-return?session_id={CHECKOUT_SESSION_ID}&status=success`;
-  const cancel_url = `${origin}/api/checkout-return?session_id={CHECKOUT_SESSION_ID}&status=cancel`;
 
   try {
     // Attach demo Visa 4242 as the customer's default so Checkout shows it on file.
@@ -54,6 +41,10 @@ export async function handler(event) {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       customer: customerId,
+      ui_mode: uiMode(),
+      // Stripe rejects `return_url` alongside 'never'; the UI stays put and
+      // reacts to Stripe.js `onComplete` instead.
+      redirect_on_completion: 'never',
       payment_method_types: ['card'],
       line_items: [
         {
@@ -77,14 +68,10 @@ export async function handler(event) {
         allow_redisplay_filters: ['always'],
         payment_method_save: 'enabled',
       },
-      success_url,
-      cancel_url,
     });
 
-    await saveCheckoutIntent(session.id, { playerId, returnUrl, amountCents });
-
     return json(200, {
-      checkoutUrl: session.url,
+      clientSecret: session.client_secret,
       sessionId: session.id,
       customerId,
     });
@@ -95,4 +82,10 @@ export async function handler(event) {
       message: err.message,
     });
   }
+}
+
+// Stripe renamed the embedded enum from 'embedded' to 'embedded_page'
+// (2026-03-25 API version). Allow pinning via env for older accounts.
+function uiMode() {
+  return process.env.STRIPE_CHECKOUT_UI_MODE || 'embedded_page';
 }
