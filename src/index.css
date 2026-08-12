@@ -391,7 +391,8 @@ a.wallet-return-link:hover {
 }
 
 /* Stripe injects its own iframe here; give it room inside the plugin panel. */
-.wallet-checkout-embed > div:last-child {
+.wallet-checkout-stripe {
+  position: relative;
   flex: 1;
   min-height: 480px;
   background: var(--card);
@@ -399,83 +400,105 @@ a.wallet-return-link:hover {
   overflow: hidden;
 }
 
-.wallet-payment-transition {
-  flex: 1;
-  min-height: 480px;
+.wallet-checkout-stripe > div {
+  height: 100%;
+}
+
+/* Payment confirmed: settle Stripe's form out rather than cutting to a
+   separate success screen. */
+.wallet-checkout-stripe.is-settling > div:first-child {
+  filter: blur(2px);
+  opacity: 0.25;
+  transition: opacity 0.32s ease, filter 0.32s ease;
+}
+
+.wallet-checkout-veil {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 32px 20px;
-  text-align: center;
-  color: var(--on-ink);
-  animation: wallet-transition-in 0.28s ease-out both;
+  gap: 14px;
+  background: rgba(30, 18, 51, 0.86);
+  backdrop-filter: blur(3px);
+  animation: wallet-veil-in 0.24s ease-out both;
 }
 
-.wallet-payment-transition-icon {
-  width: 64px;
-  height: 64px;
-  display: grid;
-  place-items: center;
-  border: 3px solid currentColor;
-  border-radius: 50%;
-  color: var(--amber);
-  font-family: var(--font-pixel);
-  font-size: 20px;
-  box-shadow: 0 0 28px rgba(255, 200, 87, 0.22);
-}
-
-.wallet-payment-transition.is-processing .wallet-payment-transition-icon {
-  animation: wallet-processing-pulse 1s ease-in-out infinite;
-}
-
-.wallet-payment-transition.is-success .wallet-payment-transition-icon {
-  color: var(--mint);
-  box-shadow: 0 0 32px rgba(124, 246, 200, 0.3);
-}
-
-.wallet-payment-transition.is-error .wallet-payment-transition-icon {
-  color: var(--pixel-pink);
-}
-
-.wallet-payment-transition h2 {
-  margin: 8px 0 0;
-  color: var(--on-ink);
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-}
-
-.wallet-payment-transition p {
+.wallet-checkout-veil p {
   margin: 0;
-  color: rgba(247, 239, 224, 0.76);
-  font-size: 14px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.6;
+  color: var(--mint);
 }
 
-.wallet-payment-transition .secondary-button {
-  margin-top: 8px;
+.wallet-checkout-veil-dots {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(124, 246, 200, 0.25);
+  border-top-color: var(--mint);
+  animation: wallet-veil-spin 0.9s linear infinite;
 }
 
-@keyframes wallet-transition-in {
+.wallet-return-to-wallet {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
+
+.wallet-panel-checkout.is-leaving {
+  opacity: 0;
+  transform: scale(0.995);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.wallet-panel.is-returning {
+  animation: wallet-panel-return 0.42s ease-out both;
+}
+
+.wallet-panel-balance strong.is-credited {
+  animation: wallet-balance-credited 1s ease-out both;
+}
+
+@keyframes wallet-veil-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.99);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
-@keyframes wallet-processing-pulse {
-  0%,
-  100% {
-    transform: scale(0.96);
-    opacity: 0.72;
+@keyframes wallet-veil-spin {
+  to {
+    transform: rotate(360deg);
   }
-  50% {
-    transform: scale(1.04);
+}
+
+@keyframes wallet-panel-return {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
     opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wallet-balance-credited {
+  0% {
+    color: var(--on-ink);
+    text-shadow: 0 0 0 rgba(124, 246, 200, 0);
+  }
+  35% {
+    color: var(--mint);
+    text-shadow: 0 0 26px rgba(124, 246, 200, 0.75);
+  }
+  100% {
+    color: var(--mint);
+    text-shadow: 0 0 18px rgba(124, 246, 200, 0.35);
   }
 }
 
