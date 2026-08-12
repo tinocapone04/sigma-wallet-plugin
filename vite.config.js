@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Separate port from the game library (3030) so both can run locally.
+// Vite sits behind `netlify dev` (public port 3030). Plain `npm run dev`
+// also lands here when you don't need the /api functions.
 export default defineConfig({
   plugins: [react()],
   server: {

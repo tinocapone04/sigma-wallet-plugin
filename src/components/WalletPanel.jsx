@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { EmbeddedCheckout, EmbeddedCheckoutProvider } from '@stripe/react-stripe-js';
 import { readReturnUrl } from '../utils/returnUrl.js';
+import { useSigmaWalletWrite } from '../store/useSigmaWalletWrite.js';
 
 const TOP_UP_OPTIONS = [
   { label: '$5', cents: 500 },
@@ -12,15 +13,20 @@ const TOP_UP_OPTIONS = [
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
-export default function WalletPanel({ wallet, playerId }) {
+export default function WalletPanel({ wallet, playerId, onCheckoutChange }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [checkout, setCheckout] = useState(null);
   const [returnUrl, setReturnUrl] = useState(() => readReturnUrl());
+  const sigmaWrite = useSigmaWalletWrite();
 
   useEffect(() => {
     setReturnUrl(readReturnUrl());
   }, []);
+
+  useEffect(() => {
+    onCheckoutChange?.(Boolean(checkout));
+  }, [checkout, onCheckoutChange]);
 
   const fetchClientSecret = useCallback(async () => {
     if (!checkout?.clientSecret) throw new Error('missing_client_secret');
@@ -30,10 +36,32 @@ export default function WalletPanel({ wallet, playerId }) {
   const handleComplete = useCallback(async () => {
     setMessage('Payment received — crediting wallet…');
     try {
-      await wallet.refreshUntilCredited?.({
-        previousBalanceCents: checkout?.previousBalanceCents,
-      });
-      setMessage('Wallet updated.');
+      // Credit directly from the verified Stripe session (no webhook needed).
+      const data = checkout?.sessionId
+        ? await wallet.creditCheckout?.(checkout.sessionId)
+        : await wallet.refreshUntilCredited?.({
+            previousBalanceCents: checkout?.previousBalanceCents,
+          });
+      const newBalance =
+        data?.balance ??
+        (data?.balanceCents != null ? data.balanceCents / 100 : wallet.balance);
+
+      if (sigmaWrite.configured && newBalance != null) {
+        setMessage('Payment received — updating workbook…');
+        const result = await sigmaWrite.writeBalance(newBalance);
+        if (result.written) {
+          setMessage('Wallet updated.');
+        } else {
+          setMessage('Wallet credited. Bind creditWalletEvent to sync the input table.');
+        }
+      } else {
+        setMessage(
+          sigmaWrite.configured
+            ? 'Wallet updated.'
+            : 'Wallet credited. Bind creditWalletEvent to sync the input table.',
+        );
+      }
+
       // The game library listens for this to refresh without a reload.
       try {
         window.opener?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
@@ -47,7 +75,7 @@ export default function WalletPanel({ wallet, playerId }) {
       setCheckout(null);
       setBusy(false);
     }
-  }, [wallet, checkout?.previousBalanceCents, playerId]);
+  }, [wallet, checkout?.sessionId, checkout?.previousBalanceCents, playerId, sigmaWrite]);
 
   const checkoutOptions = useMemo(
     () => ({ fetchClientSecret, onComplete: handleComplete }),
@@ -83,7 +111,13 @@ export default function WalletPanel({ wallet, playerId }) {
     setBusy(true);
     setMessage(null);
     try {
-      await wallet.devCredit(1000);
+      const data = await wallet.devCredit(1000);
+      const newBalance =
+        data?.balance ??
+        (data?.balanceCents != null ? data.balanceCents / 100 : wallet.balance);
+      if (sigmaWrite.configured && newBalance != null) {
+        await sigmaWrite.writeBalance(newBalance);
+      }
       setMessage('Dev credit applied (+$10).');
     } catch (err) {
       setMessage(err.message || 'Dev credit failed');
@@ -103,6 +137,27 @@ export default function WalletPanel({ wallet, playerId }) {
       ? `$${(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : '—';
 
+  // Page B: full-panel Stripe Checkout (hides fund UI via onCheckoutChange).
+  if (checkout && stripePromise) {
+    return (
+      <section className="wallet-panel wallet-panel-checkout" aria-label="Checkout">
+        <div className="wallet-checkout-embed">
+          <div className="wallet-checkout-embed-header">
+            <strong>Add ${(checkout.amountCents / 100).toFixed(2)}</strong>
+            <button type="button" className="secondary-button" onClick={handleCancelCheckout}>
+              Cancel
+            </button>
+          </div>
+          {message && <p className="wallet-panel-message">{message}</p>}
+          <EmbeddedCheckoutProvider stripe={stripePromise} options={checkoutOptions}>
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
+      </section>
+    );
+  }
+
+  // Page A: balance + top-up actions.
   return (
     <section className="wallet-panel" aria-label="Wallet">
       <div className="wallet-panel-main">
@@ -117,7 +172,7 @@ export default function WalletPanel({ wallet, playerId }) {
               key={opt.cents}
               type="button"
               className="secondary-button wallet-topup-button"
-              disabled={busy || Boolean(checkout) || wallet.status === 'needs-config'}
+              disabled={busy || wallet.status === 'needs-config'}
               onClick={() => handleTopUp(opt.cents)}
             >
               Add {opt.label}
@@ -152,23 +207,11 @@ export default function WalletPanel({ wallet, playerId }) {
       {wallet.status === 'needs-config' && <p className="game-error">Waiting for viewer email / player id.</p>}
       {message && <p className="wallet-panel-message">{message}</p>}
       <p className="wallet-panel-hint">
-        Pay right here — Stripe Checkout is embedded in this plugin with demo Visa •••• 4242 already on file. Same
+        Pay right here — Stripe Checkout opens as the next step with demo Visa •••• 4242 already on file. Same
         playerId shares this balance with the game library.
+        {!sigmaWrite.configured &&
+          ' Bind walletMoneyControl + creditWalletEvent in the editor to sync the workbook input table.'}
       </p>
-
-      {checkout && stripePromise && (
-        <div className="wallet-checkout-embed">
-          <div className="wallet-checkout-embed-header">
-            <strong>Add ${(checkout.amountCents / 100).toFixed(2)}</strong>
-            <button type="button" className="secondary-button" onClick={handleCancelCheckout}>
-              Cancel
-            </button>
-          </div>
-          <EmbeddedCheckoutProvider stripe={stripePromise} options={checkoutOptions}>
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
-      )}
     </section>
   );
 }

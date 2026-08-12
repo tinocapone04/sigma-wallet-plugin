@@ -90,8 +90,25 @@ export function usePaidWallet(playerId) {
     [playerId],
   );
 
-  // Checkout completes before Stripe's webhook lands, so poll the ledger for
-  // the credit rather than showing a stale balance.
+  // Webhook-free crediting: after Stripe.js fires onComplete, ask the server
+  // to verify the session (payment_status: paid) and credit the ledger. This
+  // returns the new balance synchronously, so there's nothing to poll for.
+  const creditCheckout = useCallback(
+    async (sessionId) => {
+      if (!playerId) throw new Error('player_id_required');
+      if (!sessionId) throw new Error('session_id_required');
+      const data = await apiFetch('/api/checkout-credit', {
+        method: 'POST',
+        body: JSON.stringify({ playerId, sessionId }),
+      });
+      applyWallet(data);
+      return data;
+    },
+    [playerId, applyWallet],
+  );
+
+  // Kept for resilience: poll the ledger until a credit lands (e.g. if you
+  // still run the Stripe webhook). Not used by the default onComplete path.
   const refreshUntilCredited = useCallback(
     async ({ previousBalanceCents, timeoutMs = 20000, intervalMs = 800 } = {}) => {
       if (!playerId) return null;
@@ -167,6 +184,7 @@ export function usePaidWallet(playerId) {
     mode: 'paid',
     refresh,
     refreshUntilCredited,
+    creditCheckout,
     topUp,
     devCredit: import.meta.env.VITE_ALLOW_DEV_CREDIT === 'true' ? devCredit : undefined,
     purchaseGame,

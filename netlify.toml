@@ -4,9 +4,11 @@
   functions = "netlify/functions"
 
 [dev]
+  # Public port 3030 matches this org's Sigma Plugin Dev Playground.
+  # Vite sits behind Netlify on 3040.
   command = "npm run dev -- --port 3040 --strictPort"
   targetPort = 3040
-  port = 8890
+  port = 3030
   framework = "#custom"
 
 [functions]

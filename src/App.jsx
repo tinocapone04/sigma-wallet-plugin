@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useLocalPlayerId } from './store/useLocalPlayerId.js';
 import { useViewerIdentity } from './store/useViewerIdentity.js';
 import { usePaidWallet, isPaidWalletConfigured } from './store/usePaidWallet.js';
@@ -14,6 +14,8 @@ export default function App() {
       : player?.displayName;
   const wallet = usePaidWallet(playerId);
   const [nameInput, setNameInput] = useState('');
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const handleCheckoutChange = useCallback((open) => setCheckoutOpen(open), []);
 
   if (identity.adapter === 'sigma' && !playerId) {
     return (
@@ -58,7 +60,7 @@ export default function App() {
       <Screen>
         <h1>Sigma Wallet</h1>
         <p>
-          Set <code>VITE_API_BASE</code> to this site&apos;s origin (e.g. <code>http://localhost:8890</code> with{' '}
+          Set <code>VITE_API_BASE</code> to this site&apos;s origin (e.g. <code>http://localhost:3030</code> with{' '}
           <code>npm run dev:full</code>).
         </p>
       </Screen>
@@ -66,17 +68,19 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="wallet-hero">
-        <p className="wallet-brand">Sigma Wallet</p>
-        <h1>Fund your balance</h1>
-        <p className="wallet-lede">
-          Top up via Stripe Checkout — every user has demo Visa •••• 4242 on file to confirm. The game library spends
-          the same wallet using your email as player id
-          {displayName ? ` (${displayName})` : ''}.
-        </p>
-      </header>
-      <WalletPanel wallet={wallet} playerId={playerId} />
+    <div className={`app${checkoutOpen ? ' app-checkout' : ''}`}>
+      {!checkoutOpen && (
+        <header className="wallet-hero">
+          <p className="wallet-brand">Sigma Wallet</p>
+          <h1>Fund your balance</h1>
+          <p className="wallet-lede">
+            Top up via Stripe Checkout — every user has demo Visa •••• 4242 on file to confirm. The game library spends
+            the same wallet using your email as player id
+            {displayName ? ` (${displayName})` : ''}.
+          </p>
+        </header>
+      )}
+      <WalletPanel wallet={wallet} playerId={playerId} onCheckoutChange={handleCheckoutChange} />
     </div>
   );
 }

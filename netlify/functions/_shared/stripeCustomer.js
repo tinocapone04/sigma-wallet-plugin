@@ -61,6 +61,37 @@ async function setMappedCustomerId(playerId, customerId) {
   writeFileMap(all);
 }
 
+const DEMO_FIRST_NAMES = ['Alex', 'Jordan', 'Sam', 'Casey', 'Riley', 'Morgan', 'Quinn', 'Avery'];
+const DEMO_LAST_NAMES = ['Nguyen', 'Patel', 'Garcia', 'Kim', 'Brooks', 'Chen', 'Rivera', 'Walsh'];
+const DEMO_STREETS = ['123 Market St', '456 Oak Ave', '789 Pine Rd', '12 Cedar Blvd', '88 Harbor Way'];
+const DEMO_CITIES = [
+  { city: 'San Francisco', state: 'CA', postal_code: '94105' },
+  { city: 'Austin', state: 'TX', postal_code: '78701' },
+  { city: 'Seattle', state: 'WA', postal_code: '98101' },
+  { city: 'Chicago', state: 'IL', postal_code: '60601' },
+  { city: 'Boston', state: 'MA', postal_code: '02108' },
+];
+
+function pick(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+/** Cosmetic Customer fields only — does not autofill Checkout card form fields. */
+function randomDemoBilling() {
+  const name = `${pick(DEMO_FIRST_NAMES)} ${pick(DEMO_LAST_NAMES)}`;
+  const place = pick(DEMO_CITIES);
+  return {
+    name,
+    address: {
+      line1: pick(DEMO_STREETS),
+      city: place.city,
+      state: place.state,
+      postal_code: place.postal_code,
+      country: 'US',
+    },
+  };
+}
+
 async function ensureDefaultTestCard(stripe, customerId) {
   const existing = await stripe.paymentMethods.list({
     customer: customerId,
@@ -89,7 +120,8 @@ async function ensureDefaultTestCard(stripe, customerId) {
 
 /**
  * Every wallet user gets a Stripe Customer with the same demo Visa on file.
- * Checkout then opens the portal with that card ready to confirm.
+ * Checkout then opens with that card ready to confirm (Link / saved-card UI).
+ * You cannot autofill PAN/CVC into Stripe's iframe — Dashboard cannot either.
  */
 export async function ensureCustomerWithDefaultCard(stripe, playerId) {
   if (!String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_')) {
@@ -110,9 +142,11 @@ export async function ensureCustomerWithDefaultCard(stripe, playerId) {
 
   if (!customer) {
     const email = playerId.includes('@') ? playerId : undefined;
+    const billing = randomDemoBilling();
     customer = await stripe.customers.create({
       email,
-      name: playerId,
+      name: billing.name,
+      address: billing.address,
       metadata: { playerId, demoCard: 'tok_visa' },
     });
     customerId = customer.id;
