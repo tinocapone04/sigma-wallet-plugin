@@ -9,6 +9,8 @@ const TOP_UP_OPTIONS = [
   { label: '$25', cents: 2500 },
 ];
 
+const MIN_DOLLARS = 1;
+
 const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
@@ -16,6 +18,7 @@ export default function WalletPanel({ wallet, playerId }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [checkout, setCheckout] = useState(null);
+  const [customAmount, setCustomAmount] = useState('');
   const [returnUrl, setReturnUrl] = useState(() => readReturnUrl());
 
   useEffect(() => {
@@ -34,7 +37,6 @@ export default function WalletPanel({ wallet, playerId }) {
         previousBalanceCents: checkout?.previousBalanceCents,
       });
       setMessage('Wallet updated.');
-      // The game library listens for this to refresh without a reload.
       try {
         window.opener?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
         window.parent?.postMessage({ type: 'sigma-wallet-topup', status: 'success', playerId }, '*');
@@ -42,7 +44,7 @@ export default function WalletPanel({ wallet, playerId }) {
         // ignore
       }
     } catch (err) {
-      setMessage(`Paid, but the balance did not refresh (${err.message}). Try Refresh.`);
+      setMessage(`Paid, but the balance did not refresh (${err.message}).`);
     } finally {
       setCheckout(null);
       setBusy(false);
@@ -78,18 +80,19 @@ export default function WalletPanel({ wallet, playerId }) {
     }
   }
 
-  async function handleDevCredit() {
-    if (!wallet.devCredit) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      await wallet.devCredit(1000);
-      setMessage('Dev credit applied (+$10).');
-    } catch (err) {
-      setMessage(err.message || 'Dev credit failed');
-    } finally {
-      setBusy(false);
+  function handleCustomSubmit(event) {
+    event.preventDefault();
+    const dollars = Number(customAmount);
+    if (!Number.isFinite(dollars) || dollars < MIN_DOLLARS) {
+      setMessage(`Enter at least $${MIN_DOLLARS}.`);
+      return;
     }
+    const cents = Math.round(dollars * 100);
+    if (cents % 100 !== 0) {
+      setMessage('Use whole dollar amounts (e.g. 15, not 15.50).');
+      return;
+    }
+    handleTopUp(cents);
   }
 
   function handleCancelCheckout() {
@@ -103,11 +106,13 @@ export default function WalletPanel({ wallet, playerId }) {
       ? `$${(wallet.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
       : '—';
 
+  const actionsDisabled = busy || Boolean(checkout) || wallet.status === 'needs-config';
+
   return (
     <section className="wallet-panel" aria-label="Wallet">
       <div className="wallet-panel-main">
         <div className="wallet-panel-balance">
-          <span className="wallet-panel-eyebrow">Balance</span>
+          <span className="wallet-panel-eyebrow">CREDITS</span>
           <strong>{balanceLabel}</strong>
           {playerId && <span className="wallet-panel-player">{playerId}</span>}
         </div>
@@ -117,43 +122,47 @@ export default function WalletPanel({ wallet, playerId }) {
               key={opt.cents}
               type="button"
               className="secondary-button wallet-topup-button"
-              disabled={busy || Boolean(checkout) || wallet.status === 'needs-config'}
+              disabled={actionsDisabled}
               onClick={() => handleTopUp(opt.cents)}
             >
               Add {opt.label}
             </button>
           ))}
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={busy || wallet.status === 'loading'}
-            onClick={() => wallet.refresh?.()}
-          >
-            Refresh
-          </button>
+          <form className="wallet-custom-inline" onSubmit={handleCustomSubmit}>
+            <span className="wallet-custom-prefix" aria-hidden="true">
+              $
+            </span>
+            <input
+              id="wallet-custom-amount"
+              className="wallet-custom-input"
+              type="number"
+              inputMode="numeric"
+              min={MIN_DOLLARS}
+              step={1}
+              placeholder="Other"
+              aria-label="Custom amount in dollars"
+              value={customAmount}
+              disabled={actionsDisabled}
+              onChange={(e) => setCustomAmount(e.target.value)}
+            />
+            <button className="secondary-button wallet-custom-submit" type="submit" disabled={actionsDisabled}>
+              Add
+            </button>
+          </form>
           {returnUrl && (
             <a className="secondary-button wallet-return-link" href={returnUrl}>
               Back to Sigma
             </a>
           )}
-          {wallet.devCredit && (
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={busy || wallet.status === 'needs-config'}
-              onClick={handleDevCredit}
-            >
-              Dev +$10
-            </button>
-          )}
         </div>
       </div>
+
       {wallet.status === 'error' && <p className="game-error">Wallet error: {wallet.error}</p>}
       {wallet.status === 'needs-config' && <p className="game-error">Waiting for viewer email / player id.</p>}
       {message && <p className="wallet-panel-message">{message}</p>}
       <p className="wallet-panel-hint">
-        Pay right here — Stripe Checkout is embedded in this plugin with demo Visa •••• 4242 already on file. Same
-        playerId shares this balance with the game library.
+        Pay right here — Stripe Checkout is embedded with demo Visa •••• 4242 already on file. Same playerId shares this
+        balance with the game library.
       </p>
 
       {checkout && stripePromise && (

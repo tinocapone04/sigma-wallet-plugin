@@ -1,17 +1,28 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Source+Sans+3:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Archivo:wght@600;700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&display=swap");
 
+/* Space Ma / pinball arcade tokens — aligned with sigma-game-library-plugin */
 :root {
-  --bg: #0c1210;
-  --bg-glow: #1a2e24;
-  --surface: #15201b;
-  --border: #2a3d34;
-  --text: #e8f0eb;
-  --text-dim: #8fa89a;
-  --accent: #3dd68c;
-  --accent-dim: #2a9f68;
-  --danger: #f07178;
-  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-body: "Source Sans 3", "Segoe UI", sans-serif;
+  --page: #e6dcca;
+  --card: #fdfbf6;
+  --sunken: #f2eadb;
+  --ink: #1e1233;
+  --ink-soft: #2c1d4e;
+  --ink-deep: #150d25;
+  --on-ink: #f7efe0;
+  --crimson: #c0184a;
+  --crimson-deep: #8e0f36;
+  --crimson-hot: #e4467a;
+  --pixel-pink: #ff6b9d;
+  --amber: #ffc857;
+  --mint: #7cf6c8;
+  --border: #ded2bc;
+  --border-strong: #c9baa0;
+  --danger: #c0184a;
+  --font-pixel: "Press Start 2P", monospace;
+  --font-display: "Archivo", "Hanken Grotesk", sans-serif;
+  --font-ui: "Hanken Grotesk", sans-serif;
+  --shadow-hard: 5px 5px 0 rgba(21, 13, 37, 0.4);
+  --shadow-hard-sm: 3px 3px 0 rgba(21, 13, 37, 0.35);
 }
 
 *,
@@ -29,21 +40,22 @@ body,
 }
 
 body {
-  font-family: var(--font-body);
-  color: var(--text);
+  font-family: var(--font-ui);
+  color: var(--ink);
   background:
-    radial-gradient(ellipse 90% 60% at 15% -10%, var(--bg-glow), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 20%, #12201a, transparent 50%),
-    var(--bg);
+    radial-gradient(ellipse 80% 50% at 10% 0%, rgba(255, 200, 87, 0.22), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 10%, rgba(255, 107, 157, 0.14), transparent 50%),
+    var(--page);
 }
 
 .app {
+  position: relative;
   min-height: 100%;
-  padding: 28px 20px 40px;
+  padding: 22px 16px 32px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 20px;
+  gap: 16px;
   max-width: 720px;
   margin: 0 auto;
 }
@@ -57,87 +69,154 @@ body {
   gap: 14px;
 }
 
+.screen-centered h1 {
+  font-family: var(--font-pixel);
+  font-size: clamp(14px, 3.2vw, 18px);
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+}
+
+.screen-centered p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
 .wallet-hero {
   text-align: left;
 }
 
 .wallet-brand {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 6vw, 2.75rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--accent);
-  line-height: 1.05;
+  margin: 0 0 10px;
+  font-family: var(--font-pixel);
+  font-size: clamp(14px, 3.5vw, 20px);
+  line-height: 1.55;
+  color: var(--crimson);
+  text-shadow: 3px 3px 0 rgba(21, 13, 37, 0.2);
+  animation: wallet-marquee-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes wallet-marquee-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.12);
+  }
 }
 
 .wallet-hero h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.25rem, 3vw, 1.6rem);
-  font-weight: 600;
-  color: var(--text);
+  font-size: clamp(1.35rem, 3.5vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-transform: uppercase;
 }
 
 .wallet-lede {
   margin: 10px 0 0;
-  color: var(--text-dim);
-  font-size: 15px;
+  color: var(--ink-soft);
+  font-size: 14px;
   line-height: 1.45;
-  max-width: 36em;
+  max-width: 38em;
 }
 
 .name-input {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
+  border-radius: 4px;
+  border: 2px solid var(--ink);
+  background: var(--card);
+  color: var(--ink);
   font: inherit;
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .primary-button,
 .secondary-button {
-  font: inherit;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  border-radius: 4px;
+  border: 2px solid var(--ink);
   cursor: pointer;
-  padding: 10px 16px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-hard-sm);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.primary-button:hover:not(:disabled),
+.secondary-button:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 rgba(21, 13, 37, 0.45);
+}
+
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 rgba(21, 13, 37, 0.4);
 }
 
 .primary-button {
-  background: var(--accent);
-  color: #0a120e;
-}
-
-.primary-button:hover {
-  filter: brightness(1.06);
+  background: var(--crimson);
+  color: var(--on-ink);
+  border-color: var(--ink-deep);
 }
 
 .secondary-button {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text);
+  background: var(--card);
+  color: var(--ink);
 }
 
 .secondary-button:hover:not(:disabled) {
-  border-color: var(--accent-dim);
-  color: var(--accent);
+  background: var(--amber);
+  color: var(--ink-deep);
 }
 
-.secondary-button:disabled {
+.secondary-button:disabled,
+.primary-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-hard-sm);
 }
 
+/* Cabinet panel */
 .wallet-panel {
+  position: relative;
   width: 100%;
-  padding: 18px 18px 16px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: linear-gradient(160deg, #1a2821 0%, var(--surface) 100%);
+  padding: 16px 16px 14px;
+  border-radius: 6px;
+  border: 3px solid var(--crimson-deep);
+  background: var(--ink);
+  color: var(--on-ink);
+  box-shadow: var(--shadow-hard);
+  overflow: hidden;
+}
+
+.wallet-panel::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 0, 0, 0.12) 2px,
+    rgba(0, 0, 0, 0.12) 3px
+  );
+  opacity: 0.35;
+  z-index: 1;
+}
+
+.wallet-panel > * {
+  position: relative;
+  z-index: 2;
 }
 
 .wallet-panel-main {
@@ -150,74 +229,136 @@ body {
 
 .wallet-panel-eyebrow {
   display: block;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin-bottom: 4px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--on-ink);
+  opacity: 0.7;
+  margin-bottom: 8px;
 }
 
 .wallet-panel-balance strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: clamp(1.75rem, 5vw, 2.35rem);
   font-weight: 800;
   letter-spacing: -0.02em;
+  color: var(--mint);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 0 18px rgba(124, 246, 200, 0.35);
 }
 
 .wallet-panel-player {
   display: block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text-dim);
+  margin-top: 8px;
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  line-height: 1.6;
+  color: var(--amber);
+  opacity: 0.9;
   word-break: break-all;
 }
 
 .wallet-panel-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.wallet-panel-actions .secondary-button {
+  background: var(--sunken);
+  border-color: var(--ink-deep);
+  color: var(--ink);
+}
+
+.wallet-panel-actions .secondary-button:hover:not(:disabled) {
+  background: var(--pixel-pink);
+  color: var(--ink-deep);
+  border-color: var(--ink-deep);
+}
+
+.wallet-custom-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 6px;
+  background: var(--ink-deep);
+  border: 2px solid var(--ink-soft);
+  border-radius: 4px;
+}
+
+.wallet-custom-prefix {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--amber);
+}
+
+.wallet-custom-input {
+  width: 3.75rem;
+  padding: 5px 6px;
+  border-radius: 2px;
+  border: 2px solid var(--ink-soft);
+  background: var(--sunken);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wallet-custom-input:disabled {
+  opacity: 0.45;
+}
+
+.wallet-custom-submit {
+  padding: 5px 8px !important;
+  font-size: 11px !important;
+  box-shadow: none !important;
 }
 
 .wallet-topup-button,
 .wallet-panel-actions .secondary-button,
 .wallet-return-link {
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 a.wallet-return-link {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  background: var(--accent);
-  border-color: transparent;
-  color: #0a120e;
-  font-weight: 600;
+  background: var(--crimson);
+  border-color: var(--ink-deep);
+  color: var(--on-ink);
+  font-weight: 700;
 }
 
 a.wallet-return-link:hover {
-  filter: brightness(1.06);
-  color: #0a120e;
+  background: var(--crimson-hot);
+  color: var(--ink-deep);
 }
 
 .wallet-panel-message {
   margin: 12px 0 0;
-  font-size: 13px;
-  color: var(--accent);
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.6;
+  color: var(--mint);
 }
 
 .wallet-panel-hint {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--text-dim);
-  line-height: 1.4;
+  color: rgba(247, 239, 224, 0.72);
+  line-height: 1.45;
 }
 
 .wallet-checkout-embed {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--ink-soft);
 }
 
 .wallet-checkout-embed-header {
@@ -226,22 +367,40 @@ a.wallet-return-link:hover {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+  font-family: var(--font-display);
+  color: var(--on-ink);
+}
+
+.wallet-checkout-embed-header strong {
+  color: var(--amber);
 }
 
 /* Stripe injects its own iframe here; give it room inside the plugin panel. */
 .wallet-checkout-embed > div:last-child {
   min-height: 340px;
+  background: var(--card);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
 .game-error {
   margin: 10px 0 0;
-  color: var(--danger);
-  font-size: 13px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  line-height: 1.55;
+  color: var(--pixel-pink);
 }
 
 code {
-  font-size: 0.92em;
-  background: rgba(61, 214, 140, 0.12);
-  padding: 1px 5px;
-  border-radius: 4px;
+  font-family: var(--font-pixel);
+  font-size: 0.65em;
+  background: rgba(255, 200, 87, 0.2);
+  color: var(--ink);
+  padding: 2px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+}
+
+.screen-centered code {
+  color: var(--ink-deep);
 }

@@ -12,7 +12,7 @@ export default function App() {
     identity.adapter === 'sigma' || identity.adapter === 'embed'
       ? identity.displayName
       : player?.displayName;
-  const wallet = usePaidWallet(playerId);
+  const wallet = usePaidWallet(playerId, { displayName });
   const [nameInput, setNameInput] = useState('');
 
   if (identity.adapter === 'sigma' && !playerId) {
@@ -42,7 +42,7 @@ export default function App() {
             className="name-input"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
-            placeholder="e.g. alice@example.com"
+            placeholder="e.g. you@sigmacomputing.com"
             autoFocus
           />
           <button className="primary-button" type="submit">
@@ -68,11 +68,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="wallet-hero">
-        <p className="wallet-brand">Sigma Wallet</p>
-        <h1>Fund your balance</h1>
+        <p className="wallet-brand">INSERT COIN</p>
+        <h1>Sigma Wallet</h1>
         <p className="wallet-lede">
-          Top up via Stripe Checkout — every user has demo Visa •••• 4242 on file to confirm. The game library spends
-          the same wallet using your email as player id
+          Top up via Stripe Checkout — demo Visa •••• 4242 is already on file. Game library spends the same balance
+          using your email as player id
           {displayName ? ` (${displayName})` : ''}.
         </p>
       </header>
